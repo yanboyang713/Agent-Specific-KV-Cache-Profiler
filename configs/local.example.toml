@@ -1,0 +1,22 @@
+[experiment]
+name = "agent-specific-kv-cache-profiling"
+benchmark_run_id = "local-dev"
+
+[sglang]
+base_url = "http://localhost:30000"
+model = "profiler-model"
+stream = true
+temperature = 0.0
+max_tokens = 512
+
+[workflow]
+workflow_id = "kvflow-peer"
+workflow_type = "kvflow-peer"
+max_turns = 1
+workflow_concurrency = 1
+
+[artifacts]
+requests_jsonl = "artifacts/requests.jsonl"
+prompt_artifact_dir = "artifacts/prompts"
+analysis_dir = "artifacts/analysis"
+environment_json = "artifacts/environment.json"
