@@ -1,0 +1,101 @@
+name: kv-cache-profiler
+
+services:
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile.mlflow
+    image: kv-cache-profiler-mlflow
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./artifacts/mlflow:/mlflow
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000', timeout=5).read()\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  sglang:
+    image: ${SGLANG_IMAGE:-lmsysorg/sglang:latest}
+    environment:
+      MODEL_PATH: ${MODEL_PATH:?Set MODEL_PATH to a Hugging Face model id or a container-visible model path}
+      SERVED_MODEL_NAME: ${SERVED_MODEL_NAME:-profiler-model}
+      HF_TOKEN: ${HF_TOKEN:-}
+    ports:
+      - "30000:30000"
+    volumes:
+      - ./artifacts:/workspace/artifacts
+      - ./artifacts/huggingface:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      sh -lc '
+        mkdir -p /workspace/artifacts/sglang/request_metrics /workspace/artifacts/sglang/request_logs &&
+        python -m sglang.launch_server
+          --model-path "$${MODEL_PATH}"
+          --served-model-name "$${SERVED_MODEL_NAME}"
+          --host 0.0.0.0
+          --port 30000
+          --enable-cache-report
+          --enable-metrics
+          --log-requests
+          --log-requests-level 0
+          --log-requests-format json
+          --log-requests-target /workspace/artifacts/sglang/request_logs
+          --export-metrics-to-file
+          --export-metrics-to-file-dir /workspace/artifacts/sglang/request_metrics
+      '
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:30000/health', timeout=5).read()\"",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 30
+
+  profiler:
+    profiles:
+      - run
+    build:
+      context: .
+      dockerfile: Dockerfile.profiler
+    image: kv-cache-profiler
+    depends_on:
+      mlflow:
+        condition: service_healthy
+      sglang:
+        condition: service_healthy
+    environment:
+      PROMPT: ${PROMPT:-Profile how this workflow reuses KV cache.}
+      SERVED_MODEL_NAME: ${SERVED_MODEL_NAME:-profiler-model}
+    volumes:
+      - ./artifacts:/workspace/artifacts
+    command:
+      - run
+      - --prompt
+      - ${PROMPT:-Profile how this workflow reuses KV cache.}
+      - --sglang-url
+      - http://sglang:30000
+      - --model
+      - ${SERVED_MODEL_NAME:-profiler-model}
+      - --mlflow-tracking-uri
+      - http://mlflow:5000
+      - --requests-jsonl
+      - artifacts/requests.jsonl
+      - --prompt-artifact-dir
+      - artifacts/prompts
+      - --max-turns
+      - "1"
+      - --stream

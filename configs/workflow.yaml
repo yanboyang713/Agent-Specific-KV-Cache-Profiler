@@ -1,0 +1,30 @@
+# Baseline workflow configuration template.
+#
+# Future workflow variants should add their own files under
+# `configs/experiments/` and use a distinct `workflow_type`.
+
+experiment:
+  name: agent-specific-kv-cache-profiling
+  benchmark_run_id: local-dev
+
+workflow:
+  workflow_id: kvflow-peer
+  workflow_type: kvflow-peer
+  max_turns: 1
+  workflow_concurrency: 1
+  agents:
+    - planner
+    - executor
+    - expresser
+    - reviewer
+
+mlflow:
+  tracking_uri: http://localhost:5000
+  experiment_name: agent-specific-kv-cache-profiling
+  langchain_autolog: true
+
+artifacts:
+  requests_jsonl: artifacts/requests.jsonl
+  prompt_artifact_dir: artifacts/prompts
+  analysis_dir: artifacts/analysis
+  environment_json: artifacts/environment.json

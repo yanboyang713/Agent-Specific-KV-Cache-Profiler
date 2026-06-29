@@ -1,0 +1,30 @@
+# SGLang launch template for Phase 0 reproducibility.
+#
+# This file is a recordable configuration target. The current CLI does not parse
+# it directly yet; keep it in sync with the actual SGLang launch command used for
+# an experiment.
+
+server:
+  host: 0.0.0.0
+  port: 30000
+  base_url: http://localhost:30000
+
+model:
+  model_path: ${MODEL_PATH}
+  served_model_name: profiler-model
+  tokenizer_revision: null
+  chat_template: null
+  precision: null
+  kv_cache_precision: null
+  max_context_length: null
+
+telemetry:
+  enable_cache_report: true
+  enable_metrics: true
+  enable_request_time_stats_logging: true
+  export_metrics_to_file: true
+  metrics_dir: artifacts/sglang/request_metrics
+  log_requests: true
+  log_requests_level: 0
+  log_requests_format: json
+  log_requests_target: artifacts/sglang/request_logs
