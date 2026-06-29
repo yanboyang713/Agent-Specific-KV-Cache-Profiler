@@ -1,12 +1,12 @@
 # Agent-Specific KV-Cache Profiler
 
-Initial implementation of the baseline KVFlow-style profiler described in
-`agents.md`. The profiler is intended to support other LangGraph multi-agent
-workflow variants in future experiments.
+Initial implementation of an agent-specific KV-cache profiler described in
+`agents.md`. KVFlow is included as one LangGraph multi-agent workflow variant;
+the profiler is intended to support additional workflow variants.
 
 The first slice focuses on request-level profiling:
 
-- baseline agent identities: `planner`, `executor`, `expresser`, `reviewer`;
+- KVFlow agent identities: `planner`, `executor`, `expresser`, `reviewer`;
 - one shared OpenAI-compatible SGLang client wrapper;
 - generated `request_uuid` values before model calls;
 - canonical JSONL records with cache and latency fields;
@@ -37,6 +37,7 @@ Agent-Specific-KV-Cache-Profiler/
     workflow.py
     analysis.py
   workflows/
+    kvflow/
     synthetic/
     kubernetes_aiops/
   sglang_instrumentation/
@@ -47,8 +48,10 @@ Agent-Specific-KV-Cache-Profiler/
 ```
 
 The Org note's `profiler/` directory maps to `src/kv_cache_profiler/` here so
-the package remains installable with `pip install -e`. Generated run outputs
-belong under `artifacts/`; only `artifacts/.gitkeep` is tracked.
+the package remains installable with `pip install -e`. The KVFlow workflow
+implementation lives under `workflows/kvflow/`; `src/kv_cache_profiler/workflow.py`
+is a compatibility wrapper for existing imports. Generated run outputs belong
+under `artifacts/`; only `artifacts/.gitkeep` is tracked.
 
 ## Docker-First Runtime
 
@@ -181,7 +184,7 @@ graph.invoke(state, config={"configurable": {"thread_id": state["thread_id"]}})
 
 ## Quick Start
 
-Run a single baseline KVFlow pass against an SGLang server:
+Run a single KVFlow pass against an SGLang server:
 
 ```bash
 python -m kv_cache_profiler.cli run \

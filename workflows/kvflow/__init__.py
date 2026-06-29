@@ -1,9 +1,6 @@
-"""Compatibility wrapper for the baseline KVFlow workflow.
+"""Baseline KVFlow / PEER-style workflow."""
 
-The implementation lives in :mod:`workflows.kvflow.workflow`.
-"""
-
-from workflows.kvflow.workflow import (
+from .workflow import (
     KVFLOW_AGENTS,
     KVFlowConfig,
     KVFlowState,

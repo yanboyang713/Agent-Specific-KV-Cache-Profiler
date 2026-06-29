@@ -2,7 +2,6 @@
 
 from .client import ModelParameters, ProfiledChatResult, ProfiledSGLangClient, RequestContext
 from .schema import CANONICAL_REQUEST_FIELDS, RequestRecord
-from .workflow import KVFLOW_AGENTS, KVFlowConfig, run_kvflow
 
 __all__ = [
     "CANONICAL_REQUEST_FIELDS",
@@ -15,3 +14,11 @@ __all__ = [
     "RequestRecord",
     "run_kvflow",
 ]
+
+
+def __getattr__(name: str):
+    if name in {"KVFLOW_AGENTS", "KVFlowConfig", "run_kvflow"}:
+        from . import workflow
+
+        return getattr(workflow, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

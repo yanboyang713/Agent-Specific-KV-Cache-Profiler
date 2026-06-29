@@ -34,7 +34,7 @@ all = [
 kv-cache-profiler = "kv_cache_profiler.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/kv_cache_profiler"]
+packages = ["src/kv_cache_profiler", "workflows"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
