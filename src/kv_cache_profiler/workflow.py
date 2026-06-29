@@ -80,9 +80,8 @@ def initial_state(config: KVFlowConfig) -> KVFlowState:
 def run_kvflow(client: ProfiledSGLangClient, config: KVFlowConfig) -> KVFlowState:
     state = initial_state(config)
     if config.use_langgraph:
-        graph = _try_build_langgraph(client, config)
-        if graph is not None:
-            return graph.invoke(state, config={"configurable": {"thread_id": state["thread_id"]}})
+        graph = _build_langgraph(client, config)
+        return graph.invoke(state, config={"configurable": {"thread_id": state["thread_id"]}})
     return _run_local_state_machine(client, config, state)
 
 
@@ -100,11 +99,11 @@ def _run_local_state_machine(
             return state
 
 
-def _try_build_langgraph(client: ProfiledSGLangClient, config: KVFlowConfig) -> Any | None:
+def _build_langgraph(client: ProfiledSGLangClient, config: KVFlowConfig) -> Any:
     try:
         from langgraph.graph import END, START, StateGraph
-    except ImportError:
-        return None
+    except ImportError as exc:
+        raise RuntimeError("LangGraph is required for production profiler runs") from exc
 
     graph = StateGraph(KVFlowState)
     graph.add_node("planner", lambda state: _planner_node(client, config, state))

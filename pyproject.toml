@@ -5,22 +5,19 @@ build-backend = "hatchling.build"
 [project]
 name = "agent-specific-kv-cache-profiler"
 version = "0.1.0"
-description = "Agent-specific KV-cache profiler for KVFlow-style LangGraph, SGLang, and MLflow experiments."
+description = "Agent-specific KV-cache profiler for LangGraph, SGLang, and MLflow multi-agent workflow experiments."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
   { name = "Boyang Yan" }
 ]
-dependencies = []
+dependencies = [
+  "langgraph>=0.2",
+  "mlflow>=3.6",
+]
 
 [project.optional-dependencies]
-langgraph = [
-  "langgraph>=0.2",
-]
-mlflow = [
-  "mlflow>=2.14",
-]
 analysis = [
   "pandas>=2.0",
   "pyarrow>=15.0",
@@ -29,8 +26,6 @@ dev = [
   "pytest>=8.0",
 ]
 all = [
-  "langgraph>=0.2",
-  "mlflow>=2.14",
   "pandas>=2.0",
   "pyarrow>=15.0",
 ]

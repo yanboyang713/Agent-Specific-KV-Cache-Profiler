@@ -1,6 +1,6 @@
 # Agent Instructions: Agent-Specific KV-Cache Profiler
 
-This repository builds an agent-specific KV-cache profiler for a KVFlow-style multi-agent workflow using LangGraph, SGLang, and MLflow.
+This repository builds an agent-specific KV-cache profiler for LangGraph multi-agent workflows using SGLang and MLflow.
 
 The first goal is characterization, not cache-policy optimization. Before adding workflow-aware eviction, prefetching, compression, or RL-based cache management, the system must accurately measure how agents use and reuse the KV cache.
 
@@ -23,11 +23,11 @@ The advanced version should also answer:
 - how long useful prefixes remained resident;
 - how cache behavior could influence future RL-based KV management decisions.
 
-## Required Workflow
+## Baseline Workflow
 
-Use the KVFlow / PEER-style workflow exactly. Do not replace it with the generic Planner, Executor, Verifier workflow.
+Use the KVFlow / PEER-style workflow as the baseline workflow for the MVP and first validation experiments. KVFlow is not the only workflow this profiler should support over time.
 
-The workflow is:
+The baseline workflow is:
 
 ```text
 Planner -> Executor -> Expresser -> Reviewer -> Planner
@@ -40,7 +40,19 @@ Agent roles:
 - `expresser`: converts the executor's result into a clear user-facing answer, report, or intermediate response.
 - `reviewer`: evaluates the expressed result, checks quality or completeness, and sends feedback back to the planner.
 
-All implementation, tests, analysis, dashboards, and documentation should use these four agent identities unless a new experiment explicitly defines another KVFlow-compatible variant.
+Baseline implementation, tests, analysis, dashboards, and documentation should use these four agent identities.
+
+Future workflow variants are allowed, including non-KVFlow agent topologies, but each variant must be explicit and reproducible:
+
+- define a stable `workflow_type`;
+- define the graph topology and stopping condition;
+- define the allowed `agent_id` values and role prompts;
+- define how `previous_agent_id`, `turn_id`, and transitions are recorded;
+- keep one shared profiled SGLang client wrapper;
+- keep the canonical request schema compatible across workflows;
+- preserve MLflow tracing with LangGraph `thread_id` session grouping.
+
+Do not silently replace the baseline KVFlow workflow with a generic Planner, Executor, Verifier workflow. Add other workflows as named experiments or modules so comparisons remain interpretable.
 
 ## Architecture
 
@@ -66,6 +78,52 @@ No single component has the complete view:
 - LangGraph supplies workflow semantics.
 - SGLang supplies serving and KV-cache telemetry.
 - MLflow stores, correlates, visualizes, and compares measurements.
+
+LangGraph and MLflow are required runtime dependencies. Do not implement this project as a generic local state machine with optional tracing; the primary execution path must be a LangGraph workflow recorded with MLflow Tracing.
+
+## Docker and GPU Runtime
+
+Use Docker/OCI containers as the default runtime boundary for this project. Do not require bare-metal Python, MLflow, or SGLang installs unless an experiment explicitly compares host-native execution.
+
+Recommended container split:
+
+- SGLang runs in a GPU-enabled container on the node that owns the model and GPU.
+- The profiler application runs in a CPU container and talks to SGLang through the OpenAI-compatible HTTP API.
+- MLflow runs in a container with persistent tracking storage.
+- Artifacts are written to bind-mounted project directories such as `artifacts/`.
+
+Docker supports NVIDIA GPU access when the Docker host has a working NVIDIA driver and NVIDIA Container Toolkit installation. Verify GPU access before any SGLang experiment:
+
+```bash
+nvidia-smi
+```
+
+```bash
+docker run --rm --gpus all ubuntu nvidia-smi
+```
+
+For Docker Compose, reserve GPUs only for services that need them, normally SGLang:
+
+```yaml
+services:
+  sglang:
+    image: <pin-sglang-cuda-image>
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+```
+
+On the Proxmox VE Data Center Testbed, Docker can only use GPUs that are already visible inside the host, VM, or LXC running Docker Engine. GPU passthrough or device mapping must be solved before Docker-level GPU verification can pass.
+
+Target testbed placement:
+
+- Prefer `server4.testbed.com` with NVIDIA GeForce RTX 2070 for modern SGLang/CUDA experiments.
+- Treat `server5.testbed.com` with NVIDIA GRID K2 as a compatibility-risk target because old GPUs may require older NVIDIA driver and CUDA stacks.
+- Record the Proxmox node, VM/LXC identity, GPU model, NVIDIA driver, CUDA runtime, Docker Engine version, Compose version, and NVIDIA Container Toolkit version in every reproducibility run.
 
 ## Implementation Levels
 
@@ -389,17 +447,63 @@ Record:
 - KV-cache precision;
 - maximum context length;
 - chat template;
-- SGLang launch arguments.
+- SGLang launch arguments;
+- Docker Engine version;
+- Docker Compose version;
+- NVIDIA Container Toolkit version;
+- container image names, tags, and immutable digests for SGLang, MLflow, and the profiler;
+- Proxmox node and VM/LXC placement when running on the Data Center Testbed.
+
+Repository structure:
+
+```text
+Agent-Specific-KV-Cache-Profiler/
+  configs/
+    sglang.yaml
+    workflow.yaml
+    experiments/
+  src/kv_cache_profiler/
+    schema.py
+    mlflow_integration.py
+    client.py
+    environment.py
+    workflow.py
+    analysis.py
+  workflows/
+    synthetic/
+    kubernetes_aiops/
+  sglang_instrumentation/
+  experiments/
+  analysis/
+  tests/
+  artifacts/
+```
+
+The Org-roam note's `profiler/` directory maps to `src/kv_cache_profiler/` in this repository to preserve a standard installable Python package layout. Generated outputs should go under `artifacts/`; source-controlled experiment definitions and analysis code belong in `experiments/` and `analysis/`.
 
 ### Phase 1: Start MLflow and SGLang
+
+Prefer containerized startup. Host-native commands are acceptable only as debugging references or explicit comparison baselines.
+
+Before starting SGLang in Docker, confirm GPU access:
+
+```bash
+docker run --rm --gpus all ubuntu nvidia-smi
+```
 
 MLflow:
 
 ```bash
-mlflow server \
-  --host 0.0.0.0 \
-  --port 5000
+docker build -f Dockerfile.mlflow -t kv-cache-profiler-mlflow .
+mkdir -p artifacts/mlflow
+docker run --rm \
+  --name kv-cache-profiler-mlflow \
+  -p 5000:5000 \
+  -v "$PWD/artifacts/mlflow:/mlflow" \
+  kv-cache-profiler-mlflow
 ```
+
+Start MLflow before the profiler process initializes tracing. The profiler sets the tracking URI, selects the experiment, enables `mlflow.langchain.autolog()`, and then invokes the LangGraph workflow; the tracking server must be reachable for the workflow trace, child spans, thread/session metadata, and artifacts to land in the shared MLflow backend.
 
 SGLang:
 
@@ -426,7 +530,7 @@ Do not enable every tracing and debugging option at once. Use separate modes:
 - server tracing mode;
 - source instrumentation mode.
 
-### Phase 2: Minimal LangGraph Implementation of the KVFlow Workflow
+### Phase 2: Minimal LangGraph Implementation of the Baseline Workflow
 
 Implement:
 
@@ -454,6 +558,10 @@ The graph state should carry:
 
 All agent nodes must call one shared profiled SGLang client. Do not duplicate request logic inside individual nodes.
 
+LangGraph is not optional for the production profiler. A local deterministic runner may exist only as a narrowly scoped unit-test helper, not as the documented or benchmarked execution path.
+
+Design this phase so future workflow types can reuse the instrumentation path. A new workflow may change graph topology and agent roles, but it must still emit the canonical identifiers and request records.
+
 ### Phase 3: MLflow Tracing
 
 Initialize MLflow before invoking the graph:
@@ -463,10 +571,25 @@ import mlflow
 
 mlflow.set_tracking_uri("http://localhost:5000")
 mlflow.set_experiment("agent-specific-kv-cache-profiling")
-mlflow.langchain.autolog(log_traces=True, run_tracer_inline=True)
+mlflow.langchain.autolog()
 ```
 
-Use the LangGraph `thread_id` for persistent workflow grouping.
+MLflow traces LangGraph through the LangChain autologging integration. Keep this initialization in the profiler startup path, not in ad hoc notebooks or one-off scripts.
+
+Use the LangGraph `thread_id` for persistent workflow grouping. Pass it in the graph invocation config so MLflow can record session metadata:
+
+```python
+graph.invoke(
+    state,
+    config={"configurable": {"thread_id": state["thread_id"]}},
+)
+```
+
+Each profiled run must produce:
+
+- an MLflow trace for the full LangGraph workflow;
+- child spans or span attributes for each agent invocation and SGLang request;
+- the same `thread_id`, `workflow_run_id`, `agent_id`, `turn_id`, and `request_uuid` values in MLflow spans and canonical request records.
 
 ### Phase 4: Instrumented SGLang Client
 
@@ -680,13 +803,13 @@ shared document + agent role
 
 ### Workflow Topology
 
-Use the KVFlow loop as the main topology:
+Use the KVFlow loop as the baseline topology:
 
 ```text
 Planner -> Executor -> Expresser -> Reviewer -> Planner
 ```
 
-Additional topologies may be introduced only as explicit experiments.
+Additional topologies are expected in future work. Introduce them only as explicit experiments with their own `workflow_type`, topology documentation, agent-role definitions, and validation notes.
 
 ### Cache Pressure
 
@@ -802,8 +925,9 @@ Preserve raw measurements. Do not keep only aggregated charts.
 
 ## Coding Rules for Future Agents
 
-- Use the KVFlow workflow names: `planner`, `executor`, `expresser`, `reviewer`.
-- Do not silently rename `expresser` to `verifier`, `responder`, or `summarizer`.
+- For the baseline KVFlow workflow, use the workflow names: `planner`, `executor`, `expresser`, `reviewer`.
+- Do not silently rename baseline `expresser` to `verifier`, `responder`, or `summarizer`.
+- For new workflow variants, define agent names explicitly and keep them stable within that `workflow_type`.
 - Keep one shared SGLang client wrapper for all agent nodes.
 - Keep one canonical request schema.
 - Generate request IDs before sending requests to SGLang.
@@ -813,13 +937,17 @@ Preserve raw measurements. Do not keep only aggregated charts.
 - Do not attribute global cache changes to one request under concurrency unless source-level events prove it.
 - Add source-level instrumentation only after the basic profiler passes validation.
 - Prefer reproducible configuration files over hard-coded experiment settings.
+- Prefer Docker/OCI runtime artifacts and document image tags or digests for reproducibility.
+- Verify Docker GPU access before running SGLang GPU experiments.
+- Treat LangGraph and MLflow as required dependencies, not optional integrations.
+- Use MLflow Tracing for every LangGraph workflow run; do not silently fall back to no-op tracing.
 - Do not optimize cache policies before baseline characterization is complete.
 
 ## Minimum Viable Profiler
 
 The MVP is complete when it can:
 
-1. display the KVFlow workflow as an MLflow trace;
+1. display the baseline KVFlow workflow as an MLflow trace;
 2. identify every agent and model invocation;
 3. report prompt tokens and cached tokens for every request;
 4. calculate newly computed prompt tokens and cache-hit ratio;
@@ -834,9 +962,15 @@ Eviction provenance, cache-node residency, CPU-GPU cache movement, and RL-driven
 
 ## References
 
+- Local Org-roam note: `2026-06-24-143948-building_an_agent_specific_kv_cache_profiler_with_langgraph_sglang_and_mlflow.org`
 - KVFlow paper: https://arxiv.org/abs/2507.07400
 - KVFlow repository: https://github.com/PanZaifeng/KVFlow
 - PEER workflow paper: https://arxiv.org/abs/2407.06985
 - SGLang documentation: https://docs.sglang.ai/
 - MLflow documentation: https://mlflow.org/docs/latest/
+- MLflow LangGraph tracing documentation: https://mlflow.org/docs/latest/genai/tracing/integrations/listing/langgraph/
+- Docker GPU access documentation: https://docs.docker.com/engine/containers/gpu/
+- Docker Compose GPU support documentation: https://docs.docker.com/compose/how-tos/gpu-support/
+- NVIDIA Container Toolkit installation guide: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html
+- Data Center Testbed: https://yanboyang.com/posts/2025-04-10-010004-data_center_testbed_design
 - Agent-Specific KV-Cache Profiler with LangGraph, SGLang, and MLflow documentation: https://yanboyang.com/posts/2026-06-24-143948-building_an_agent_specific_kv_cache_profiler_with_langgraph_sglang_and_mlflow

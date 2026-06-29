@@ -31,7 +31,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kv-cache-profiler")
     subparsers = parser.add_subparsers(dest="command")
 
-    run_parser = subparsers.add_parser("run", help="Run the KVFlow profiler workflow.")
+    run_parser = subparsers.add_parser("run", help="Run the baseline KVFlow profiler workflow.")
     run_parser.add_argument("--prompt", required=True)
     run_parser.add_argument("--sglang-url", default="http://localhost:30000")
     run_parser.add_argument("--api-key")
@@ -49,8 +49,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--workflow-concurrency", type=int, default=1)
     run_parser.add_argument("--requests-jsonl", default="artifacts/requests.jsonl")
     run_parser.add_argument("--prompt-artifact-dir", default="artifacts/prompts")
-    run_parser.add_argument("--mlflow-tracking-uri")
-    run_parser.add_argument("--use-langgraph", action=argparse.BooleanOptionalAction, default=True)
+    run_parser.add_argument("--mlflow-tracking-uri", default="http://localhost:5000")
 
     analyze_parser = subparsers.add_parser("analyze", help="Generate per-agent and transition summaries.")
     analyze_parser.add_argument("--requests-jsonl", required=True)
@@ -88,7 +87,7 @@ def _run_command(args: argparse.Namespace) -> int:
         thread_id=args.thread_id,
         workflow_concurrency=args.workflow_concurrency,
         max_turns=args.max_turns,
-        use_langgraph=args.use_langgraph,
+        use_langgraph=True,
         model_parameters=ModelParameters(
             model=args.model,
             temperature=args.temperature,

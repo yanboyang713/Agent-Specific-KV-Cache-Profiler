@@ -119,7 +119,7 @@ class ProfiledChatResult:
 
 
 class ProfiledSGLangClient:
-    """Shared model client used by all KVFlow agent nodes."""
+    """Shared model client used by all profiled workflow agent nodes."""
 
     def __init__(
         self,

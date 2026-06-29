@@ -1,11 +1,11 @@
 # MVP Implementation Notes
 
 This implementation starts with Level 1 request-level profiling from
-`agents.md`.
+`agents.md`, using KVFlow as the baseline workflow.
 
 ## Implemented
 
-- KVFlow order: `planner -> executor -> expresser -> reviewer -> planner or END`.
+- Baseline KVFlow order: `planner -> executor -> expresser -> reviewer -> planner or END`.
 - Shared profiled SGLang client wrapper for every agent request.
 - Stable request identifiers generated before sending requests.
 - Canonical request rows in JSONL.
@@ -18,11 +18,14 @@ This implementation starts with Level 1 request-level profiling from
 - Per-agent and transition-level summaries.
 - Environment metadata capture.
 
-## Optional Integrations
+## Required Integrations
 
-- LangGraph is used when installed; otherwise a local state machine preserves the
-  same agent order.
-- MLflow span recording is enabled when `mlflow.start_span` is available.
+- LangGraph is the required workflow runtime for production profiler runs.
+- MLflow Tracing is required for LangGraph workflow observability.
+- LangGraph invocations pass `thread_id` in config so MLflow can group traces
+  into sessions.
+- Future workflow variants may change graph topology and agent roles, but must
+  keep the canonical request identifiers and tracing contract.
 - Parquet export is enabled when `pandas` and `pyarrow` are installed.
 
 ## Validation Targets

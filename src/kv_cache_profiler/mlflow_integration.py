@@ -1,4 +1,4 @@
-"""Small optional MLflow adapter."""
+"""MLflow tracing adapter."""
 
 from __future__ import annotations
 
@@ -54,19 +54,16 @@ def initialize_mlflow(
     tracking_uri: str | None,
     experiment_name: str,
     enable_langchain_autolog: bool = True,
-) -> MLflowSpanSink | NoOpSpanSink:
-    if not tracking_uri:
-        return NoOpSpanSink()
-    try:
-        import mlflow
-    except ImportError:
-        return NoOpSpanSink()
+) -> MLflowSpanSink:
+    import mlflow
 
-    mlflow.set_tracking_uri(tracking_uri)
+    if tracking_uri:
+        mlflow.set_tracking_uri(tracking_uri)
     mlflow.set_experiment(experiment_name)
     if enable_langchain_autolog:
         langchain = getattr(mlflow, "langchain", None)
         autolog = getattr(langchain, "autolog", None) if langchain is not None else None
-        if callable(autolog):
-            autolog(log_traces=True, run_tracer_inline=True)
+        if not callable(autolog):
+            raise RuntimeError("MLflow LangChain autologging is required for LangGraph tracing")
+        autolog()
     return MLflowSpanSink(mlflow)
