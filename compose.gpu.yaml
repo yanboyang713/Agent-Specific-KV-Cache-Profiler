@@ -41,18 +41,18 @@ services:
     command: >
       sh -lc '
         mkdir -p /workspace/artifacts/sglang/request_metrics /workspace/artifacts/sglang/request_logs &&
-        python -m sglang.launch_server
-          --model-path "$${MODEL_PATH}"
-          --served-model-name "$${SERVED_MODEL_NAME}"
-          --host 0.0.0.0
-          --port 30000
-          --enable-cache-report
-          --enable-metrics
-          --log-requests
-          --log-requests-level 0
-          --log-requests-format json
-          --log-requests-target /workspace/artifacts/sglang/request_logs
-          --export-metrics-to-file
+        python -m sglang.launch_server \
+          --model-path "${MODEL_PATH:?Set MODEL_PATH to a Hugging Face model id or a container-visible model path}" \
+          --served-model-name "${SERVED_MODEL_NAME:-profiler-model}" \
+          --host 0.0.0.0 \
+          --port 30000 \
+          --enable-cache-report \
+          --enable-metrics \
+          --log-requests \
+          --log-requests-level 0 \
+          --log-requests-format json \
+          --log-requests-target /workspace/artifacts/sglang/request_logs \
+          --export-metrics-to-file \
           --export-metrics-to-file-dir /workspace/artifacts/sglang/request_metrics
       '
     healthcheck:
