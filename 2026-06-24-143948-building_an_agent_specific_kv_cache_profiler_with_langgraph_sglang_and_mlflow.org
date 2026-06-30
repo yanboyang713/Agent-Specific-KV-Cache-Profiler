@@ -2236,6 +2236,574 @@ The implementation should begin with per-request cached-token reporting, client-
 
 This staged approach minimizes engineering risk while producing useful results early. It also prevents the project from prematurely optimizing cache policies before the underlying multi-agent workload has been accurately characterized.
 
+* Using Codex on Ubuntu to debug Docker Compose services
+:PROPERTIES:
+:ID:       a2d85499-994e-43b5-a20c-140d147af96b
+:END:
+
+When the profiler stack runs as several Docker containers, debugging usually means inspecting Compose configuration, container state, logs, health checks, networks, ports, mounts, environment variables, and service dependencies. Codex CLI can automate much of that investigation from an Ubuntu terminal because it can run the same local tools a developer would run manually.
+
+Codex does not need a special Docker plugin for this workflow. In a local CLI session, the practical path is:
+
+#+begin_src text
+Codex CLI
+  |
+  | runs docker commands
+  v
+Docker CLI
+  |
+  | talks through a Unix socket
+  v
+/var/run/docker.sock
+  |
+  v
+Docker daemon
+  |
+  v
+Containers and Docker Compose services
+#+end_src
+
+For example, when Codex runs:
+
+#+begin_src bash
+docker compose ps
+#+end_src
+
+the command follows the same path as a manual terminal command. The installed =docker= client contacts the Docker daemon, and the daemon inspects or changes the containers.
+
+** Prerequisites
+:PROPERTIES:
+:ID:       2b4455c1-b547-4ee5-ac9f-ec63390fd556
+:END:
+
+The Ubuntu workstation needs:
+
+- Docker Engine;
+- Docker Compose;
+- Codex CLI;
+- a project directory containing =compose.yaml= or =docker-compose.yml=.
+
+First verify that Docker is running:
+
+#+begin_src bash
+sudo systemctl status docker
+#+end_src
+
+If it is stopped, enable and start it:
+
+#+begin_src bash
+sudo systemctl enable --now docker
+#+end_src
+
+Then verify the installed tooling:
+
+#+begin_src bash
+docker version
+docker compose version
+docker ps
+#+end_src
+
+If those commands work, the local Docker environment is ready for Codex-assisted debugging.
+
+** Docker daemon access for the current user
+:PROPERTIES:
+:ID:       b4ec970b-885c-4016-9307-3d3395377d8a
+:END:
+
+On many Ubuntu systems, Docker initially requires =sudo=:
+
+#+begin_src bash
+sudo docker ps
+#+end_src
+
+Codex normally runs as the current Linux user. For repeated local debugging, it is convenient for that user to run Docker commands directly:
+
+#+begin_src bash
+sudo usermod -aG docker "$USER"
+#+end_src
+
+Log out and log back in so the new group membership is applied. For the current terminal only, this may also work:
+
+#+begin_src bash
+newgrp docker
+#+end_src
+
+Verify the result:
+
+#+begin_src bash
+docker ps
+#+end_src
+
+Treat Docker group membership as administrative access. A process that can control the Docker daemon can create privileged containers, mount host directories, modify networks, stop services, and potentially reach sensitive host resources. Do not grant Docker access to untrusted users or unattended agents.
+
+** Install and start Codex CLI
+:PROPERTIES:
+:ID:       e702a2d8-00bd-4f75-8387-c869bb49d61d
+:END:
+
+OpenAI documents a standalone installer for macOS and Linux:
+
+#+begin_src bash
+curl -fsSL https://chatgpt.com/codex/install.sh | sh
+#+end_src
+
+The first run prompts for authentication using a ChatGPT account or an API key. After installation, verify the CLI:
+
+#+begin_src bash
+codex --version
+#+end_src
+
+Start Codex from the project root so it can see the Compose file, Dockerfiles, application code, and local configuration:
+
+#+begin_src bash
+cd ~/projects/my-application
+codex
+#+end_src
+
+A typical Compose project might look like:
+
+#+begin_src text
+my-application/
+|-- compose.yaml
+|-- backend/
+|   |-- Dockerfile
+|   `-- src/
+|-- frontend/
+|   |-- Dockerfile
+|   `-- src/
+|-- nginx/
+|   `-- nginx.conf
+`-- .env
+#+end_src
+
+** Sandbox and approval model
+:PROPERTIES:
+:ID:       a13a59f3-b9ea-4d7d-a582-b10f1a8a59c2
+:END:
+
+Codex uses sandbox and approval controls for local commands. A practical starting point for Docker debugging is the lower-risk local preset:
+
+#+begin_src bash
+codex \
+  --sandbox workspace-write \
+  --ask-for-approval on-request
+#+end_src
+
+In this mode, Codex can read files, edit files in the workspace, and run routine local commands inside the sandbox. When a command needs to cross a boundary, such as contacting a blocked local socket, Codex asks for approval.
+
+Inside an interactive Codex session, inspect or change the active mode with:
+
+#+begin_src text
+/permissions
+#+end_src
+
+For occasional Docker work, approve Docker commands one by one. This keeps privileged operations visible. It is especially appropriate when the host has important containers, persistent databases, or unrelated workloads.
+
+For frequent Docker debugging, use a narrowly scoped permission profile instead of full access. OpenAI documents permission profiles as the newer way to describe filesystem and network access together; they should not be mixed with older =sandbox_mode= settings in the same session.
+
+Example =~/.codex/config.toml= profile:
+
+#+begin_src toml
+default_permissions = "docker-debug"
+
+[permissions.docker-debug]
+description = "Edit the current project and access the local Docker daemon."
+extends = ":workspace"
+
+[permissions.docker-debug.network]
+enabled = true
+mode = "limited"
+
+[permissions.docker-debug.network.unix_sockets]
+"/var/run/docker.sock" = "allow"
+#+end_src
+
+The important entry is the explicit Unix-socket allow rule:
+
+#+begin_src toml
+[permissions.docker-debug.network.unix_sockets]
+"/var/run/docker.sock" = "allow"
+#+end_src
+
+This profile keeps normal workspace protections, grants access to the Docker socket, and avoids =danger-full-access=. If endpoint tests must reach a local web service from inside the sandbox, allow only the necessary local targets:
+
+#+begin_src toml
+[permissions.docker-debug.network.domains]
+"localhost" = "allow"
+"127.0.0.1" = "allow"
+#+end_src
+
+Avoid these combinations unless the environment is isolated and disposable:
+
+- =--dangerously-bypass-approvals-and-sandbox=
+- =--sandbox danger-full-access=
+- =approval_policy = "never"= with broad local access
+- broad Docker cleanup commands without an explicit confirmation step
+
+** Rootless Docker
+:PROPERTIES:
+:ID:       06a8ea44-cc1d-472b-8639-94c4fcadf283
+:END:
+
+Rootless Docker may not use =/var/run/docker.sock=. Its socket is often under the current user's runtime directory, for example:
+
+#+begin_src text
+/run/user/1000/docker.sock
+#+end_src
+
+Find the active endpoint:
+
+#+begin_src bash
+docker context inspect \
+  --format '{{ (index .Endpoints "docker").Host }}'
+#+end_src
+
+Example output:
+
+#+begin_src text
+unix:///run/user/1000/docker.sock
+#+end_src
+
+Remove the =unix://= prefix and allow that absolute path instead:
+
+#+begin_src toml
+[permissions.docker-debug.network.unix_sockets]
+"/run/user/1000/docker.sock" = "allow"
+#+end_src
+
+Also check whether =DOCKER_HOST= overrides the default endpoint:
+
+#+begin_src bash
+echo "$DOCKER_HOST"
+#+end_src
+
+** A structured debugging prompt
+:PROPERTIES:
+:ID:       f8b93403-b0db-4b11-90b1-3d33e9ef0655
+:END:
+
+Once Docker access works, give Codex a constrained investigation prompt:
+
+#+begin_src text
+Inspect this Docker Compose project.
+
+1. Read the Compose file and identify all services.
+2. Run docker compose config to validate the effective configuration.
+3. Run docker compose ps.
+4. Identify stopped, unhealthy, or restarting services.
+5. Read recent logs for affected services.
+6. Inspect exit codes, health checks, ports, mounts,
+   environment variables, dependencies, and networks.
+7. Explain the likely root cause before changing anything.
+8. Make only the minimum necessary changes.
+9. Rebuild and restart only the affected services.
+10. Verify the fix using service status, logs, health checks,
+    and an endpoint request.
+
+Do not delete volumes, prune Docker resources, remove databases,
+or recreate unrelated services without asking me first.
+#+end_src
+
+The final restriction matters. These commands can delete persistent data or disrupt unrelated workloads:
+
+#+begin_src bash
+docker compose down -v
+docker system prune -a
+docker volume prune
+docker rm -f
+#+end_src
+
+They should require explicit approval in an ordinary debugging session.
+
+** Useful Docker commands for Codex
+:PROPERTIES:
+:ID:       66db9724-f95c-426d-a5b7-f85c3ec9ea96
+:END:
+
+Validate the effective Compose configuration:
+
+#+begin_src bash
+docker compose config
+#+end_src
+
+This catches invalid YAML, missing environment variables, bad service references, invalid volume definitions, port conflicts, and dependency mistakes.
+
+Check service state:
+
+#+begin_src bash
+docker compose ps
+docker compose ps --all
+#+end_src
+
+Look for services in states such as:
+
+#+begin_src text
+Exited
+Restarting
+Unhealthy
+Created
+#+end_src
+
+Read logs:
+
+#+begin_src bash
+docker compose logs --tail=200
+docker compose logs --tail=200 backend
+#+end_src
+
+Use long-running log follows only when needed:
+
+#+begin_src bash
+docker compose logs -f backend
+#+end_src
+
+Inspect selected container state instead of dumping full JSON:
+
+#+begin_src bash
+docker inspect \
+  --format '{{.State.Status}} {{.State.ExitCode}} {{.State.Error}}' \
+  CONTAINER_NAME
+
+docker inspect \
+  --format '{{json .State.Health}}' \
+  CONTAINER_NAME
+#+end_src
+
+Run non-interactive checks inside a container:
+
+#+begin_src bash
+docker exec CONTAINER_NAME env
+docker exec CONTAINER_NAME ps aux
+docker exec CONTAINER_NAME cat /etc/resolv.conf
+#+end_src
+
+Inspect networks:
+
+#+begin_src bash
+docker network ls
+docker network inspect NETWORK_NAME
+#+end_src
+
+Use this to check whether services are attached to the expected network, whether container DNS names resolve, whether a service is isolated from a dependency, and whether an =external= network is wrong.
+
+Check resource usage:
+
+#+begin_src bash
+docker stats --no-stream
+#+end_src
+
+Rebuild only the affected service:
+
+#+begin_src bash
+docker compose build backend
+docker compose up -d backend
+#+end_src
+
+Or rebuild and start one affected service in one step:
+
+#+begin_src bash
+docker compose up -d --build backend
+#+end_src
+
+Avoid rebuilding the whole application unless the problem affects shared images or shared configuration.
+
+** Host-side endpoint verification
+:PROPERTIES:
+:ID:       df0b7824-5d1c-41db-a670-4490b5a21539
+:END:
+
+A running container is not proof that the application works. After startup, test the exposed endpoint from the host:
+
+#+begin_src bash
+curl -v http://localhost:8080/health
+#+end_src
+
+For HTTPS with a development certificate:
+
+#+begin_src bash
+curl -vk https://localhost:8443/health
+#+end_src
+
+A complete verification loop should include:
+
+#+begin_src bash
+docker compose ps
+docker compose logs --tail=100 SERVICE_NAME
+curl -v http://localhost:PORT/health
+#+end_src
+
+The process may be alive while its HTTP endpoint, database connection, dependency integration, or health check is failing.
+
+** Example: backend restart loop
+:PROPERTIES:
+:ID:       cb3af475-3664-4c48-81cd-cc22fa17a839
+:END:
+
+Suppose the backend service repeatedly restarts. Ask Codex:
+
+#+begin_src text
+Investigate why the backend service is restarting.
+Do not modify files until you explain the root cause.
+#+end_src
+
+Codex should gather evidence first:
+
+#+begin_src bash
+docker compose ps
+docker compose logs --tail=200 backend
+docker inspect backend
+docker compose config
+#+end_src
+
+If the logs show:
+
+#+begin_src text
+connection refused: database:5432
+#+end_src
+
+then inspect the dependency:
+
+#+begin_src bash
+docker compose ps database
+docker compose logs --tail=200 database
+docker network inspect PROJECT_DEFAULT_NETWORK
+#+end_src
+
+If the backend starts before PostgreSQL is ready, a minimal fix may be a health check plus a health-gated dependency:
+
+#+begin_src yaml
+services:
+  database:
+    image: postgres:17
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build: ./backend
+    depends_on:
+      database:
+        condition: service_healthy
+#+end_src
+
+Then validate and restart only the affected services:
+
+#+begin_src bash
+docker compose config
+docker compose up -d --build database backend
+docker compose ps
+docker compose logs --tail=100 backend
+#+end_src
+
+The pattern is evidence first, narrow fix second, targeted restart third, and explicit verification last.
+
+** Project-specific Docker rules for Codex
+:PROPERTIES:
+:ID:       c080d624-2f8d-4844-a788-b855247858e4
+:END:
+
+For repeated use, put Docker safety rules in =AGENTS.md= at the project root:
+
+#+begin_src markdown
+# Docker Debugging Rules
+
+- Inspect logs and status before modifying files.
+- Explain the root cause before applying a fix.
+- Prefer changes limited to the affected service.
+- Do not run `docker compose down -v`.
+- Do not run Docker prune commands.
+- Do not delete named volumes.
+- Do not reset or initialize databases.
+- Do not expose additional ports without explaining why.
+- Ask before stopping unrelated containers.
+- After changes, validate with `docker compose config`.
+- Verify fixes with service status, logs, health checks,
+  and endpoint tests.
+#+end_src
+
+Codex reads =AGENTS.md= as durable project guidance at session start. Keep the file concise and place stricter rules closer to specialized subdirectories when only part of the repository needs them.
+
+** Troubleshooting Docker access
+:PROPERTIES:
+:ID:       c2324661-1704-4b2c-8716-4f7fda452d71
+:END:
+
+Permission denied on the Docker socket:
+
+#+begin_src text
+permission denied while trying to connect to the Docker daemon socket
+#+end_src
+
+Check socket permissions and group membership:
+
+#+begin_src bash
+ls -l /var/run/docker.sock
+id
+getent group docker
+#+end_src
+
+If the user was recently added to the =docker= group, log out and log back in.
+
+Docker daemon unavailable:
+
+#+begin_src text
+Cannot connect to the Docker daemon
+#+end_src
+
+Check the service and recent daemon logs:
+
+#+begin_src bash
+sudo systemctl status docker
+sudo journalctl -u docker --no-pager -n 100
+sudo systemctl start docker
+#+end_src
+
+Docker works manually but not from Codex:
+
+#+begin_src bash
+docker ps
+#+end_src
+
+If that works in the terminal but fails inside Codex, the likely issue is the Codex sandbox or permission profile rather than Docker itself. Check:
+
+- whether Codex requested approval for the Docker command;
+- the active mode with =/permissions=;
+- whether the configured Unix socket matches the active Docker context;
+- whether older =sandbox_mode= settings are being mixed with permission profiles.
+
+Wrong Docker context:
+
+#+begin_src bash
+docker context show
+docker context ls
+docker context use default
+#+end_src
+
+If the active context points to a remote daemon, Codex may be debugging a different Docker host than expected.
+
+** Recommended security posture
+:PROPERTIES:
+:ID:       f54e9c54-22dd-4c38-8e46-4be96a413139
+:END:
+
+For a development workstation:
+
+- run Codex as a normal Linux user;
+- keep project files under a dedicated workspace directory;
+- start with =workspace-write= and =on-request= approvals;
+- approve Docker commands after reviewing them;
+- use a Docker-specific permission profile only for frequent debugging;
+- allow only the Docker Unix socket and any required localhost endpoints;
+- avoid =danger-full-access= unless the host is isolated;
+- never allow unattended volume deletion or Docker pruning;
+- keep secrets in protected environment files;
+- review code and configuration changes before rebuilding services;
+- maintain backups for databases and persistent volumes.
+
+Codex is most useful here as an evidence-gathering and change-minimizing debugging agent. It should inspect status, logs, health checks, networks, configuration, and endpoint behavior before it edits files or restarts services.
+
 * Reference List
 :PROPERTIES:
 :ID:       66f7441a-b341-4c2f-bdda-1c093f212422
@@ -2253,3 +2821,10 @@ This staged approach minimizes engineering risk while producing useful results e
 10. https://github.com/PanZaifeng/KVFlow
 11. https://arxiv.org/abs/2407.06985
 12. https://opentelemetry.io/docs/concepts/context-propagation/
+13. https://developers.openai.com/codex/environment-variables
+14. https://developers.openai.com/codex/concepts/sandboxing
+15. https://developers.openai.com/codex/permissions
+16. https://developers.openai.com/codex/guides/agents-md
+17. https://docs.docker.com/engine/install/ubuntu/
+18. https://docs.docker.com/compose/
+19. https://docs.docker.com/engine/security/rootless/
