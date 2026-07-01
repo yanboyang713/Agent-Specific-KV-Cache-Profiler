@@ -43,3 +43,15 @@ A violin plot shows the distribution of new prefill tokens across repeated runs.
 **Why Planner->Executor is weaker:** Planner gives high-level instructions, but Executor expands them into dynamic tool calls and observations, which are less stable and reduce exact KV reuse.
 
 A matrix shows cache reuse by transition, with rows as previous agents and columns as current agents.
+
+## Figure 4. Cache Hit Ratio Across Workflow Turns
+
+![Figure 4. Cache hit ratio across workflow turns](figure_4/figure4_cache_hit_ratio_by_turn.png)
+
+**Purpose:** Analyze cache behavior over repeated PEER cycles.
+
+**Expected observation:** Reuse improves after the first turn, especially for Planner and Reviewer.
+
+For Figure 4, the best choice is a multi-line chart: x-axis is workflow turn, y-axis is cache-hit ratio, and each line is one agent. It directly shows whether reuse improves after Turn 1 and whether Planner/Reviewer improve faster than Executor.
+
+It shows both turn-by-turn trend and agent-specific difference. Planner/Reviewer rising faster after Turn 1 directly supports the expected observation.
