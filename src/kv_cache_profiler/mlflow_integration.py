@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from importlib.util import find_spec
+import warnings
 from typing import Any, Iterator, Mapping
 
 
@@ -63,7 +65,13 @@ def initialize_mlflow(
     if enable_langchain_autolog:
         langchain = getattr(mlflow, "langchain", None)
         autolog = getattr(langchain, "autolog", None) if langchain is not None else None
-        if not callable(autolog):
-            raise RuntimeError("MLflow LangChain autologging is required for LangGraph tracing")
-        autolog()
+        if callable(autolog) and find_spec("langchain") is not None:
+            autolog()
+        else:
+            warnings.warn(
+                "MLflow LangChain autologging is unavailable because langchain is not installed; "
+                "continuing with explicit profiler spans.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
     return MLflowSpanSink(mlflow)

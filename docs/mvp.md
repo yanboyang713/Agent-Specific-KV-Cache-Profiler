@@ -1,7 +1,7 @@
 # MVP Implementation Notes
 
 This implementation starts with Level 1 request-level profiling from
-`agents.md`, using KVFlow as the baseline workflow.
+`AGENTS.md`, using KVFlow as the baseline workflow.
 
 ## Implemented
 
@@ -33,4 +33,4 @@ This implementation starts with Level 1 request-level profiling from
 The current tests cover schema calculation, request identifier completeness, and
 workflow agent order. Live SGLang validation should add the cold request, exact
 repeat, appended conversation, and one-token divergence experiments from
-`agents.md`.
+`AGENTS.md`.

@@ -22,10 +22,16 @@ services:
 
   sglang:
     image: ${SGLANG_IMAGE:-lmsysorg/sglang:latest}
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp=unconfined
     environment:
+      CUDA_ENABLE_USER_TRIGGERED_COREDUMP: "1"
       MODEL_PATH: ${MODEL_PATH:?Set MODEL_PATH to a Hugging Face model id or a container-visible model path}
       SERVED_MODEL_NAME: ${SERVED_MODEL_NAME:-profiler-model}
       HF_TOKEN: ${HF_TOKEN:-}
+      SGLANG_EXTRA_ARGS: ${SGLANG_EXTRA_ARGS:---model-impl transformers --attention-backend triton --sampling-backend pytorch --cuda-graph-backend-prefill disabled --cuda-graph-backend-decode disabled --context-length 4096 --max-total-tokens 8192 --mem-fraction-static 0.35 --chunked-prefill-size 512 --skip-server-warmup --disable-overlap-schedule}
     ports:
       - "30000:30000"
     volumes:
@@ -53,13 +59,14 @@ services:
           --log-requests-format json \
           --log-requests-target /workspace/artifacts/sglang/request_logs \
           --export-metrics-to-file \
-          --export-metrics-to-file-dir /workspace/artifacts/sglang/request_metrics
+          --export-metrics-to-file-dir /workspace/artifacts/sglang/request_metrics \
+          ${SGLANG_EXTRA_ARGS:---model-impl transformers --attention-backend triton --sampling-backend pytorch --cuda-graph-backend-prefill disabled --cuda-graph-backend-decode disabled --context-length 4096 --max-total-tokens 8192 --mem-fraction-static 0.35 --chunked-prefill-size 512 --skip-server-warmup --disable-overlap-schedule}
       '
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:30000/health', timeout=5).read()\"",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:30000/model_info', timeout=5).read()\"",
         ]
       interval: 20s
       timeout: 5s
@@ -98,4 +105,6 @@ services:
       - artifacts/prompts
       - --max-turns
       - "1"
+      - --max-tokens
+      - ${MAX_TOKENS:-128}
       - --stream

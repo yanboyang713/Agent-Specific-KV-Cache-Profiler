@@ -34,6 +34,8 @@ export MODEL_PATH="Qwen/Qwen2.5-0.5B-Instruct"
 export SERVED_MODEL_NAME="profiler-model"
 export PROMPT="Profile how this workflow reuses KV cache."
 export SGLANG_IMAGE="lmsysorg/sglang:latest"
+export MAX_TOKENS="128"
+export SGLANG_EXTRA_ARGS="--model-impl transformers --attention-backend triton --sampling-backend pytorch --cuda-graph-backend-prefill disabled --cuda-graph-backend-decode disabled --context-length 4096 --max-total-tokens 8192 --mem-fraction-static 0.35 --chunked-prefill-size 512 --skip-server-warmup --disable-overlap-schedule"
 ```
 
 `MODEL_PATH` can be a Hugging Face model id or a container-visible local model
@@ -68,11 +70,27 @@ Runtime defaults used by `compose.gpu.yaml`:
 SERVED_MODEL_NAME=profiler-model
 PROMPT=Profile how this workflow reuses KV cache.
 SGLANG_IMAGE=lmsysorg/sglang:latest
+MAX_TOKENS=128
+SGLANG_EXTRA_ARGS=--model-impl transformers --attention-backend triton --sampling-backend pytorch --cuda-graph-backend-prefill disabled --cuda-graph-backend-decode disabled --context-length 4096 --max-total-tokens 8192 --mem-fraction-static 0.35 --chunked-prefill-size 512 --skip-server-warmup --disable-overlap-schedule
 profiler --sglang-url=http://sglang:30000
 profiler --mlflow-tracking-uri=http://mlflow:5000
 profiler --requests-jsonl=artifacts/requests.jsonl
 profiler --prompt-artifact-dir=artifacts/prompts
 profiler --max-turns=1
+profiler --max-tokens=128
+```
+
+The default `SGLANG_EXTRA_ARGS` is for the RTX 2070 test VM. It uses the
+Transformers model implementation and avoids newer FlashInfer/CUDA graph paths
+that may fail on Turing GPUs with errors such as `KeyError: 'sm_75'`. It also
+caps context length and total KV tokens so SGLang does not allocate an oversized
+KV pool on 8 GB GPUs. It skips SGLang's startup warmup and disables overlap
+scheduling because the default warmup path can hang on the RTX 2070 test VM. On
+newer GPUs, benchmark with an empty override if you want SGLang's default
+optimized backends:
+
+```bash
+export SGLANG_EXTRA_ARGS=""
 ```
 
 ## Start MLflow And SGLang

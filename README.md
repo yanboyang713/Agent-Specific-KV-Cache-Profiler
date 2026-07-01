@@ -1,7 +1,7 @@
 # Agent-Specific KV-Cache Profiler
 
 Initial implementation of an agent-specific KV-cache profiler described in
-`agents.md`. KVFlow is included as one LangGraph multi-agent workflow variant;
+`AGENTS.md`. KVFlow is included as one LangGraph multi-agent workflow variant;
 the profiler is intended to support additional workflow variants.
 
 The first slice focuses on request-level profiling:
@@ -71,18 +71,31 @@ Recommended single-VM container split:
 - Artifacts: bind mount `artifacts/` so request records, prompt artifacts, logs,
   and analysis outputs survive container removal.
 
+### Prerequisites
+
 After SSHing into the GPU VM, verify that Docker can see the RTX 2070:
 
 ```bash
-nvidia-smi
-docker run --rm --gpus all ubuntu nvidia-smi
+./scripts/check_docker_gpu.sh
 ```
 
-Then use the compose runbook:
+Configure the model and Hugging Face access:
 
 ```bash
 export MODEL_PATH="Qwen/Qwen2.5-0.5B-Instruct"
 export SERVED_MODEL_NAME="profiler-model"
+# Recommended for faster Hugging Face downloads and required for gated models.
+export HF_TOKEN="<your-hugging-face-token>"
+```
+
+If you do not set `HF_TOKEN`, public models can still download, but SGLang may
+log unauthenticated Hugging Face Hub warnings and hit lower rate limits.
+
+### Run With Compose
+
+Start MLflow and SGLang:
+
+```bash
 mkdir -p artifacts/mlflow artifacts/sglang/request_metrics artifacts/sglang/request_logs artifacts/prompts
 docker compose -f compose.gpu.yaml build mlflow profiler
 docker compose -f compose.gpu.yaml up mlflow sglang
@@ -100,61 +113,17 @@ The MLflow UI is exposed on port `5000`, and SGLang is exposed on port `30000`.
 Use SSH port forwarding if those ports are not directly reachable from your
 local machine.
 
-## GPU Support in Docker
-
-Yes. Docker supports NVIDIA GPU access on Linux when the host has:
-
-- a working NVIDIA driver;
-- the NVIDIA Container Toolkit installed and configured for Docker;
-- a GPU visible to the host, VM, or LXC before Docker starts the container.
-
-Verify the host first:
-
-```bash
-nvidia-smi
-```
-
-Then verify Docker GPU access:
-
-```bash
-docker run --rm --gpus all ubuntu nvidia-smi
-```
-
-For Docker Compose, reserve GPUs on the SGLang service, not the profiler service:
-
-```yaml
-services:
-  sglang:
-    image: <pin-sglang-cuda-image>
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-```
-
-Docker does not make a hidden Proxmox GPU available by itself. GPU passthrough or
-device mapping must work first, and `nvidia-smi` should succeed in the host,
-VM, or LXC where Docker Engine runs.
-
 ## MLflow Tracing for LangGraph
 
 LangGraph and MLflow are required dependencies for this project. Use MLflow
 Tracing for every LangGraph workflow run; do not treat tracing as an optional
 debug mode.
 
-Start MLflow before running the profiler:
+When using the Docker-first runtime, the `Run With Compose` step starts the
+`mlflow` service:
 
 ```bash
-docker build -f Dockerfile.mlflow -t kv-cache-profiler-mlflow .
-mkdir -p artifacts/mlflow
-docker run --rm \
-  --name kv-cache-profiler-mlflow \
-  -p 5000:5000 \
-  -v "$PWD/artifacts/mlflow:/mlflow" \
-  kv-cache-profiler-mlflow
+docker compose -f compose.gpu.yaml up mlflow sglang
 ```
 
 MLflow needs to be reachable before the profiler starts because the profiler
