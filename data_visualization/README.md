@@ -55,3 +55,15 @@ A matrix shows cache reuse by transition, with rows as previous agents and colum
 For Figure 4, the best choice is a multi-line chart: x-axis is workflow turn, y-axis is cache-hit ratio, and each line is one agent. It directly shows whether reuse improves after Turn 1 and whether Planner/Reviewer improve faster than Executor.
 
 It shows both turn-by-turn trend and agent-specific difference. Planner/Reviewer rising faster after Turn 1 directly supports the expected observation.
+
+## Figure 5. Cache Hit Ratio Under Increasing Concurrency
+
+![Figure 5. Cache hit ratio under increasing concurrency](figure_5/figure5_cache_hit_ratio_under_increasing_concurrency.png)
+
+**Purpose:** Study cache pressure effects.
+
+**Expected observation:** Cache-hit ratio decreases as concurrency increases; Executor degrades first.
+
+Different users may use the same workflow template, but different projects create different dynamic contexts, retrieved documents, tool outputs, logs, and execution traces. That is why cache reuse drops as concurrency increases, and Executor is expected to degrade first.
+
+A multi-line chart shows cache-hit ratio as concurrency increases, with one line per agent.
