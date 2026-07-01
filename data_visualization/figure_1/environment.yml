@@ -1,0 +1,12 @@
+name: kv-cache-figure1
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - matplotlib
+  - r-base
+  - r-ggplot2
+  - r-dplyr
+  - r-svglite
