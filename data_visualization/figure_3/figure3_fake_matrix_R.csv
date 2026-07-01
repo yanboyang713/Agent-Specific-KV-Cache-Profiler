@@ -1,0 +1,17 @@
+"previous_agent","current_agent","reuse_ratio","label","label_color","label_face","highlight"
+"Planner","Planner",NA,"N/A","black","plain",FALSE
+"Executor","Planner",NA,"N/A","black","plain",FALSE
+"Expresser","Planner",NA,"N/A","black","plain",FALSE
+"Reviewer","Planner",0.82,"82%","white","bold",TRUE
+"Planner","Executor",0.46,"46%","black","plain",FALSE
+"Executor","Executor",NA,"N/A","black","plain",FALSE
+"Expresser","Executor",NA,"N/A","black","plain",FALSE
+"Reviewer","Executor",NA,"N/A","black","plain",FALSE
+"Planner","Expresser",NA,"N/A","black","plain",FALSE
+"Executor","Expresser",0.74,"74%","white","bold",TRUE
+"Expresser","Expresser",NA,"N/A","black","plain",FALSE
+"Reviewer","Expresser",NA,"N/A","black","plain",FALSE
+"Planner","Reviewer",NA,"N/A","black","plain",FALSE
+"Executor","Reviewer",NA,"N/A","black","plain",FALSE
+"Expresser","Reviewer",0.61,"61%","black","plain",FALSE
+"Reviewer","Reviewer",NA,"N/A","black","plain",FALSE

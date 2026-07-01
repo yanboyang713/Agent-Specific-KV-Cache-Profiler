@@ -27,3 +27,19 @@ A violin plot shows the distribution of cache hit ratios across repeated runs.
 **Why Executor highest?** Executor often receives dynamic tool outputs, logs, JSON results, traces, or retrieved content. These change across runs, so prefix reuse is weaker and more tokens must be recomputed.
 
 A violin plot shows the distribution of new prefill tokens across repeated runs.
+
+## Figure 3. Transition-Level Cache Reuse Matrix
+
+![Figure 3. Transition-level cache reuse matrix](figure_3/figure3_transition_cache_reuse_matrix_R.png)
+
+**Purpose:** Study whether workflow position affects cache reuse.
+
+**Expected observation:** Executor->Expresser and Reviewer->Planner show stronger reuse than Planner->Executor.
+
+**Why Executor->Expresser is stronger:** Expresser usually consumes Executor's concrete output, such as tool results, logs, retrieved evidence, or execution traces, so the next prompt may share a large suffix/prefix region.
+
+**Why Reviewer->Planner is stronger:** Reviewer's feedback often becomes the next Planner's planning context, so the next cycle can reuse previous review/state tokens.
+
+**Why Planner->Executor is weaker:** Planner gives high-level instructions, but Executor expands them into dynamic tool calls and observations, which are less stable and reduce exact KV reuse.
+
+A matrix shows cache reuse by transition, with rows as previous agents and columns as current agents.
